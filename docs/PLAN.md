@@ -4,7 +4,7 @@ Work top to bottom, one task at a time (`/next`). Tick a task only when its **Do
 
 ## Day 1: skeleton and gates (no LLM yet)
 
-- [ ] **T1.1 ★ Repo scaffold.** uv project on Python 3.12, package `factory`, Typer CLI entry point `spec2ship`, ruff, mypy (strict for `factory/`), pytest + pytest-cov with markers `docker` and `live` skipped by default, pre-commit, `.gitignore` (include `.env`, `runs/`), `.env.example`, MIT LICENSE, empty `docs/BUILD_LOG.md`.
+- [x] **T1.1 ★ Repo scaffold.** uv project on Python 3.12, package `factory`, Typer CLI entry point `spec2ship`, ruff, mypy (strict for `factory/`), pytest + pytest-cov with markers `docker` and `live` skipped by default, pre-commit, `.gitignore` (include `.env`, `runs/`), `.env.example`, MIT LICENSE, empty `docs/BUILD_LOG.md`.
   Done when: `uv run pytest -q` passes a smoke test and `uv run spec2ship --help` lists the commands.
 
 - [ ] **T1.2 ★ Target service.** `target/guard_ops`: FastAPI + SQLite with guards, sites/posts, shifts, tours with checkpoints and scan events, and incidents. About 15 tests in `target/tests`.

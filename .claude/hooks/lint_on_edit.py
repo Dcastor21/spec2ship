@@ -17,7 +17,8 @@ from pathlib import Path
 
 
 def run(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=45)
+    # Fixed `uv run ruff ...` argv list, no shell; the only variable is the edited file path.
+    return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=45)  # noqa: S603
 
 
 def main() -> int:
@@ -38,8 +39,8 @@ def main() -> int:
     if run(["uv", "run", "ruff", "--version"], project_dir).returncode != 0:
         return 0  # ruff not installed yet
 
-    run(["uv", "run", "ruff", "format", file_path], project_dir)
-    check = run(["uv", "run", "ruff", "check", "--fix", file_path], project_dir)
+    run(["uv", "run", "ruff", "format", "--", file_path], project_dir)
+    check = run(["uv", "run", "ruff", "check", "--fix", "--", file_path], project_dir)
     if check.returncode != 0:
         print(f"ruff found problems in {file_path}:\n{check.stdout}{check.stderr}", file=sys.stderr)
         return 2
