@@ -1,0 +1,86 @@
+[project]
+name = "spec2ship"
+version = "0.1.0"
+description = "A small software factory: a spec goes in, a reviewed pull request comes out. Agents propose, deterministic gates decide."
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Darnel Castor" }]
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "typer>=0.29.1",
+]
+
+[project.scripts]
+spec2ship = "factory.cli:app"
+
+[build-system]
+requires = ["uv_build>=0.13.5,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+# The repo map in CLAUDE.md keeps the package at factory/, not src/factory/.
+module-name = "factory"
+module-root = ""
+
+# --- lint and format -------------------------------------------------------
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["runs"]
+
+[tool.ruff.lint]
+# E/W pycodestyle, F pyflakes, I isort, B bugbear, UP pyupgrade,
+# S bandit (security), SIM simplify, RUF ruff-specific.
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# Plain assert is how pytest tests are written.
+"tests/**" = ["S101"]
+"target/tests/**" = ["S101"]
+"acceptance/**" = ["S101"]
+
+# --- types -----------------------------------------------------------------
+
+[tool.mypy]
+python_version = "3.12"
+files = ["factory"]
+strict = true
+warn_unreachable = true
+
+# --- tests and coverage ----------------------------------------------------
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+# acceptance/ holds the hidden grader tests and runs/ holds workspace copies;
+# neither is ever collected by the factory's own test run.
+testpaths = ["tests", "target/tests"]
+norecursedirs = [
+    ".*", "*.egg", "build", "dist", "node_modules", "venv",
+    "acceptance", "runs",
+]
+markers = [
+    "docker: needs a running Docker daemon (run with: pytest -m docker)",
+    "live: calls a real model and costs money (run with: pytest -m live)",
+]
+# A later -m on the command line replaces this one, so `pytest -m docker` works.
+addopts = ["-ra", "--strict-markers", "--strict-config", "-m", "not docker and not live"]
+
+[tool.coverage.run]
+source = ["factory"]
+branch = true
+
+[tool.coverage.report]
+# Set on day one so it can only ratchet up. Lowering it breaks invariant 5.
+fail_under = 85
+show_missing = true
+skip_covered = true
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4.1",
+    "pre-commit>=4.7.0",
+    "pytest>=9.2.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.17.5",
+]
