@@ -6,6 +6,9 @@
 # per-run artifacts (workspaces, traces, evidence)
 runs/
 
+# local SQLite databases (guard_ops.db from running the target)
+*.db
+
 # virtualenvs (.venv on Windows, .venv-linux in WSL)
 .venv*/
 

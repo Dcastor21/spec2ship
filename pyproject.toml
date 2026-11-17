@@ -17,6 +17,11 @@ spec2ship = "factory.cli:app"
 requires = ["uv_build>=0.13.5,<0.14.0"]
 build-backend = "uv_build"
 
+[tool.uv]
+# target/ is the demo service the factory modifies. Its deps live in their own
+# group so the factory package stays lean, but `uv run` still installs them.
+default-groups = ["dev", "target"]
+
 [tool.uv.build-backend]
 # The repo map in CLAUDE.md keeps the package at factory/, not src/factory/.
 module-name = "factory"
@@ -55,6 +60,8 @@ minversion = "8.0"
 # acceptance/ holds the hidden grader tests and runs/ holds workspace copies;
 # neither is ever collected by the factory's own test run.
 testpaths = ["tests", "target/tests"]
+# Makes `target` importable from the repo root, as uvicorn does with --app-dir.
+pythonpath = ["."]
 norecursedirs = [
     ".*", "*.egg", "build", "dist", "node_modules", "venv",
     "acceptance", "runs",
@@ -64,7 +71,11 @@ markers = [
     "live: calls a real model and costs money (run with: pytest -m live)",
 ]
 # A later -m on the command line replaces this one, so `pytest -m docker` works.
-addopts = ["-ra", "--strict-markers", "--strict-config", "-m", "not docker and not live"]
+# importlib import mode: tests/ and target/tests/ may hold files with the same name.
+addopts = [
+    "-ra", "--strict-markers", "--strict-config", "--import-mode=importlib",
+    "-m", "not docker and not live",
+]
 
 [tool.coverage.run]
 source = ["factory"]
@@ -78,9 +89,14 @@ skip_covered = true
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
     "mypy>=2.4.1",
     "pre-commit>=4.7.0",
     "pytest>=9.2.0",
     "pytest-cov>=7.1.0",
     "ruff>=0.17.5",
+]
+target = [
+    "fastapi>=0.163.2",
+    "uvicorn>=0.54.0",
 ]
