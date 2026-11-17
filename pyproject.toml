@@ -50,7 +50,12 @@ files = ["factory"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = ["-ra", "--strict-markers", "-m", "not docker and not live"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "-m", "not docker and not live",
+    "--cov", "--cov-report=term-missing:skip-covered",
+]
 markers = [
     "docker: needs a running Docker daemon (run with -m docker)",
     "live: calls a real model API and costs money (run with -m live)",

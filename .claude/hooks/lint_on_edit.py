@@ -39,8 +39,8 @@ def main() -> int:
     if run(["uv", "run", "ruff", "--version"], project_dir).returncode != 0:
         return 0  # ruff not installed yet
 
-    run(["uv", "run", "ruff", "format", file_path], project_dir)
-    check = run(["uv", "run", "ruff", "check", "--fix", file_path], project_dir)
+    run(["uv", "run", "ruff", "format", "--", file_path], project_dir)
+    check = run(["uv", "run", "ruff", "check", "--fix", "--", file_path], project_dir)
     if check.returncode != 0:
         print(f"ruff found problems in {file_path}:\n{check.stdout}{check.stderr}", file=sys.stderr)
         return 2

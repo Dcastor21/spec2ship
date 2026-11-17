@@ -3,29 +3,37 @@
 from __future__ import annotations
 
 import pytest
+import typer
+from typer.core import TyperGroup
 from typer.testing import CliRunner
 
 from factory.cli import app
 
 runner = CliRunner()
 
-COMMANDS = ["lint", "gates", "run", "eval"]
+COMMANDS = {"lint", "gates", "run", "eval"}
 
 
-def test_help_lists_every_command() -> None:
+def test_registers_exactly_the_planned_commands() -> None:
+    group = typer.main.get_command(app)
+
+    assert isinstance(group, TyperGroup)
+    assert set(group.commands) == COMMANDS
+
+
+def test_help_renders_every_command() -> None:
     result = runner.invoke(app, ["--help"])
 
     assert result.exit_code == 0
     for command in COMMANDS:
-        assert command in result.output
+        assert f" {command} " in result.output
 
 
 def test_no_args_shows_help() -> None:
     result = runner.invoke(app, [])
 
+    assert result.exit_code == 2  # click's no_args_is_help exits as a usage error
     assert "Usage" in result.output
-    for command in COMMANDS:
-        assert command in result.output
 
 
 @pytest.mark.parametrize(
