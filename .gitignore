@@ -1,0 +1,38 @@
+# Secrets: keys come from env, never from the repo
+.env
+.env.*
+!.env.example
+
+# Per-run factory artifacts (workspaces, traces, evidence)
+runs/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+build/
+dist/
+*.egg-info/
+
+# Tool caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Local target database
+*.db
+*.sqlite3
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Claude Code: local settings and worktrees
+.claude/settings.local.json
+.claude/worktrees/
