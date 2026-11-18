@@ -13,6 +13,11 @@ each covered elsewhere:
 - A test emptied in place (its def kept, its asserts removed). The hidden
   acceptance tests and the reviewer model catch that.
 - Secrets split across lines or encoded.
+- Names imported bare or via a star (`from unittest import skip`, `from os import
+  *`, `o = os`). The runtime skip count catches the first; the sandbox contains
+  the rest.
+- A `Test*` class pytest can't collect (one with an `__init__`). The pytest gate
+  turns that collection warning into an error.
 
 Only added lines are judged, except removed tests. Every finding's text is
 scrubbed of anything that looks like a secret, because findings reach traces
@@ -44,13 +49,17 @@ Rule = Literal[
 ]
 
 TARGET_ROOT = "target/"
+TARGET_TESTS = "target/tests"  # the only folder the pytest gate collects
 ALLOWED_MARKERS = frozenset({"parametrize", "usefixtures"})
 MAX_SHOWN = 120
 
 _QUOTED_SECRET = re.compile(
     # No letter before the keyword, so db_password, API_TOKEN and "api_key": match.
-    r"(?i)(?<![a-z])(?:api[_-]?key|secret|token|passw(?:or)?d|auth)\w*['\"]?\s*[:=]\s*"
-    r"['\"]([^'\"\s]{8,})['\"]"
+    # "auth" means auth, authorization or auth_token, never author. A value that is
+    # a header name ("X-Guard-Signature") is not a secret.
+    r"(?i)(?<![a-z])(?:api[_-]?key|secret|token|passw(?:or)?d"
+    r"|auth(?:orization|_?token)?(?![a-z]))\w*['\"]?\s*[:=]\s*"
+    r"['\"](?![Xx]-[A-Za-z0-9-]+['\"])([^'\"\s]{8,})['\"]"
 )
 _UNQUOTED_SECRET = re.compile(  # .env and YAML style; not used on .py, where it misfires
     r"(?i)^\s*(?:export\s+)?\w*(?:api[_-]?key|secret|token|passw(?:or)?d)\w*\s*[:=]\s*"
@@ -80,7 +89,15 @@ _BANNED_CALLS: list[tuple[str, re.Pattern[str]]] = [
         re.compile(rf"\bos\.{_OS_CALLS}\s*\(|\bfrom\s+os\s+import\b.*\b{_OS_CALLS}\b"),
     ),
     ("pty", re.compile(r"\bimport\s+pty\b|\bfrom\s+pty\b|\bpty\.")),
-    ("dynamic import", re.compile(r"\b__import__\s*\(|\bimportlib\b")),
+    (
+        "dynamic import",
+        # importlib.metadata (reading a version) stays allowed.
+        re.compile(
+            r"\b__import__\s*\(|\bimportlib\.(?:import_module|util)\b"
+            r"|\bfrom\s+importlib(?:\.util)?\s+import\b.*"
+            r"\b(?:import_module|spec_from_\w+|module_from_spec)\b"
+        ),
+    ),
     ("eval", re.compile(r"(?:(?<![\w.])|(?<=builtins\.))eval\s*\(")),
     ("exec", re.compile(r"(?:(?<![\w.])|(?<=builtins\.))exec\s*\(")),
 ]
@@ -90,7 +107,7 @@ _SKIP = re.compile(
     r"\bpytest\.(?:mark\.(?:skip|skipif|xfail)\b|skip\s*\(|xfail\s*\(|importorskip\s*\()"
     r"|\bfrom\s+pytest\s+import\b.*\b(?:skip|xfail|importorskip)\b"
     r"|\bunittest\.(?:skip\w*|expectedFailure)\b"
-    r"|^\s*__test__\s*="
+    r"|\b__test__\b"  # assigned, set as an attribute, or via setattr
 )
 _MARKER = re.compile(r"\bpytest\.mark\.(\w+)")
 _PYTESTMARK = re.compile(r"^\s*pytestmark\s*=")
@@ -156,7 +173,7 @@ def _unquote(raw: str) -> str:
         if char != "\\" or i + 1 == len(body):
             out += char.encode("utf-8")
             i += 1
-        elif body[i + 1 : i + 4].isdigit() and len(body[i + 1 : i + 4]) == 3:
+        elif re.fullmatch(r"[0-7]{3}", body[i + 1 : i + 4]):  # else "\9" is just "9"
             out.append(int(body[i + 1 : i + 4], 8) & 0xFF)
             i += 4
         else:
@@ -255,9 +272,13 @@ def _is_python(path: str) -> bool:
 
 
 def _is_test_module(path: str) -> bool:
-    """A file pytest collects tests from by default."""
+    """A file the pytest gate collects: test_*.py or *_test.py under target/tests/."""
     name = PurePosixPath(path).name.lower()
-    return name.endswith(".py") and (name.startswith("test_") or name.endswith("_test.py"))
+    return (
+        path.startswith(TARGET_TESTS + "/")
+        and name.endswith(".py")
+        and (name.startswith("test_") or name.endswith("_test.py"))
+    )
 
 
 def _secrets(f: FileDiff) -> Iterator[Violation]:
@@ -274,31 +295,31 @@ def _secrets(f: FileDiff) -> Iterator[Violation]:
                 break
 
 
+def _line_findings(text: str, in_target: bool) -> Iterator[tuple[Rule, str]]:
+    """(rule, detail) for each rule one added Python line breaks."""
+    shown = _shown(text)
+    if in_target:
+        for label, pattern in _BANNED_CALLS:
+            if pattern.search(text):
+                yield "banned-call", f"{label}: {shown}"
+    if _SKIP.search(text):
+        yield "skipped-test", shown
+    elif [m for m in _MARKER.findall(text) if m not in ALLOWED_MARKERS] or _PYTESTMARK.match(text):
+        yield "test-marker", shown
+    for label, pattern in _GATE_COMMENTS:
+        if pattern.search(text):
+            yield "gate-comment", f"{label}: {shown}"
+    if name := _PYTEST_NAME.search(text):
+        yield "pytest-hook", f"{name.group(1)}: {shown}"
+
+
 def _line_rules(f: FileDiff) -> Iterator[Violation]:
     if not _is_python(f.path):
         return
     in_target = f.path.startswith(TARGET_ROOT)
     for number, text in f.added:
-        shown = _shown(text)
-
-        def found(rule: Rule, detail: str, number: int = number) -> Violation:
-            return Violation(rule=rule, path=f.path, line=number, detail=detail)
-
-        if in_target:
-            for label, pattern in _BANNED_CALLS:
-                if pattern.search(text):
-                    yield found("banned-call", f"{label}: {shown}")
-        if _SKIP.search(text):
-            yield found("skipped-test", shown)
-        elif [m for m in _MARKER.findall(text) if m not in ALLOWED_MARKERS] or _PYTESTMARK.match(
-            text
-        ):
-            yield found("test-marker", shown)
-        for label, pattern in _GATE_COMMENTS:
-            if pattern.search(text):
-                yield found("gate-comment", f"{label}: {shown}")
-        if name := _PYTEST_NAME.search(text):
-            yield found("pytest-hook", f"{name.group(1)}: {shown}")
+        for rule, detail in _line_findings(text, in_target):
+            yield Violation(rule=rule, path=f.path, line=number, detail=detail)
 
 
 def _deleted_tests(files: list[FileDiff]) -> Iterator[Violation]:

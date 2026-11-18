@@ -23,13 +23,12 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
-from factory.policy import check_diff
+from factory.policy import TARGET_TESTS, check_diff
 from factory.sandbox import REPO_ROOT, Limits, Mode, SandboxResult, build_image, run
 from factory.spec import is_gate_config
 
 TARGET_DIR = "target"
 TARGET_PACKAGE = "target/guard_ops"
-TARGET_TESTS = "target/tests"
 COVERAGE_FLOOR = 90  # percent of target/guard_ops; 99% at T1.2. Raise it, never lower it.
 DOCKER_MYPY_CACHE = "/tmp/mypy_cache"  # noqa: S108 - the container's private tmpfs
 LOCK_FILE = "uv.lock"
@@ -120,6 +119,10 @@ def check_commands(python: str, mypy_cache: str) -> list[tuple[str, list[str]]]:
                 # `-m "not docker and not live"` addopts: every target test runs.
                 "-m",
                 "",
+                # A Test* class pytest can't collect (one with an __init__) is only a
+                # warning by default, and its tests would silently not run.
+                "-W",
+                "error::pytest.PytestCollectionWarning",
                 f"--cov={TARGET_PACKAGE}",
                 "--cov-report=term-missing:skip-covered",
                 f"--cov-fail-under={COVERAGE_FLOOR}",

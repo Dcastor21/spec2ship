@@ -80,6 +80,24 @@ def break_tests_and_hide_them(ws: Path) -> None:  # the reviewer's bypass: desel
     edit(test_app, "def test_health(", "@pytest.mark.live\ndef test_health(")
 
 
+def break_tests_and_hide_them_in_a_class(ws: Path) -> None:  # pytest skips a class with __init__
+    break_tests(ws)
+    edit(
+        ws / "target/tests/test_app.py",
+        "def test_health(client: TestClient) -> None:\n"
+        '    response = client.get("/health")\n'
+        "    assert response.status_code == 200\n"
+        '    assert response.json() == {"status": "ok"}\n',
+        "class TestHealth:\n"
+        "    def __init__(self) -> None:\n"
+        '        self.path = "/health"\n\n'
+        "    def test_health(self, client: TestClient) -> None:\n"
+        "        response = client.get(self.path)\n"
+        "        assert response.status_code == 200\n"
+        '        assert response.json() == {"status": "ok"}\n',
+    )
+
+
 @pytest.fixture
 def workspace(tmp_path: Path) -> Path:
     return make_workspace(tmp_path)
@@ -101,8 +119,9 @@ def test_unmodified_target_passes_every_check(workspace: Path) -> None:
         (break_tests, "pytest", "1 failed"),
         (break_coverage, "pytest", f"Required test coverage of {COVERAGE_FLOOR}% not reached"),
         (break_tests_and_hide_them, "pytest", "1 failed"),
+        (break_tests_and_hide_them_in_a_class, "pytest", "1 error"),
     ],
-    ids=["lint", "format", "types", "tests", "coverage", "marker-deselect"],
+    ids=["lint", "format", "types", "tests", "coverage", "marker-deselect", "uncollectable-class"],
 )
 def test_a_break_fails_the_right_check_and_only_that_check(
     workspace: Path,
