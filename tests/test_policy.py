@@ -44,6 +44,7 @@ FIRES = [
     ("private-key", added("target/key.pem", "-----BEGIN RSA PRIVATE KEY-----"), "secret"),
     ("credential", added(APP, 'db_password = "hunter2hunter2"'), "secret"),
     ("credential-upper", added(APP, 'API_TOKEN = "abcd1234efgh5678"'), "secret"),
+    ("auth-token", added(APP, 'AUTH_TOKEN = "abcd1234efgh5678"'), "secret"),
     ("subprocess-import", added(APP, "import subprocess"), "banned-call"),
     ("subprocess-from", added(APP, "from subprocess import run"), "banned-call"),
     ("os-system", added(APP, 'os.system("rm -rf /")'), "banned-call"),
@@ -251,6 +252,20 @@ EVASIONS = [
     ("pragma-no-colon", added(APP, "    return 1  # pragma no cover"), "gate-comment"),
     # tests dropped from collection
     ("dunder-test", added(TESTS, "__test__ = False"), "skipped-test"),
+    ("dunder-test-attribute", added(TESTS, "test_x.__test__ = False"), "skipped-test"),
+    ("dunder-test-setattr", added(TESTS, 'setattr(TestTours, "__test__", False)'), "skipped-test"),
+    (
+        "moved-to-uncollected-test-module",
+        removed(TESTS, "def test_x(client):")
+        + added("target/guard_ops/test_helpers.py", "def test_x(client):"),
+        "deleted-test",
+    ),
+    (
+        "test-module-moved-out-of-tests",
+        f"diff --git a/{TESTS} b/target/test_tours.py\nsimilarity index 100%\n"
+        f"rename from {TESTS}\nrename to target/test_tours.py\n",
+        "deleted-test",
+    ),
     ("from-pytest-import-skip", added(TESTS, "from pytest import skip"), "skipped-test"),
     ("unittest-skip", added(TESTS, '@unittest.skip("later")'), "skipped-test"),
     (
@@ -289,6 +304,12 @@ EVASIONS = [
     ),
     ("dunder-import", added(APP, 'm = __import__("subprocess")'), "banned-call"),
     ("importlib", added(APP, "m = importlib.import_module(name)"), "banned-call"),
+    (
+        "importlib-util",
+        added(APP, "s = importlib.util.spec_from_file_location(n, p)"),
+        "banned-call",
+    ),
+    ("from-importlib", added(APP, "from importlib import import_module"), "banned-call"),
     ("builtins-eval", added(APP, "builtins.eval(code)"), "banned-call"),
     # secrets in other shapes
     ("dict-key", added(APP, 'CONFIG = {"api_key": "abcd1234efgh5678"}'), "secret"),
@@ -311,6 +332,9 @@ def test_evasions_found_in_review_are_flagged(diff: str, rule: str) -> None:
 MORE_QUIET = [
     ("header-lookup", added(APP, 'token = request.headers["x-token"]')),
     ("os-path", added(APP, "path = os.path.join(root, name)")),
+    ("importlib-metadata", added(APP, 'VERSION = importlib.metadata.version("guard_ops")')),
+    ("author-email", added(APP, 'author_email = "jane@example.com"')),
+    ("header-name", added(APP, 'SECRET_HEADER = "X-Guard-Signature"')),
     (
         "test-moved-between-test-modules",
         removed(TESTS, "class TestTours:")
@@ -359,10 +383,18 @@ def test_git_quoted_paths_are_decoded() -> None:
         f"--- a/{APP}\n+++ b/{APP}\n@@ -1,5 +1,5 @@\n x = 1\n",  # ends inside a hunk
         f"--- a/{APP}\n+++ b/{APP}\n@@ -1 +1 @@\n x = 1\n y = 2\n",  # longer than its counts
         f"--- a/{APP}\n+++ b/{APP}\n@@ -1,2 +1,2 @@\n x = 1\ndiff --git a/b b/b\n",  # cut short
+        f"--- a/{APP}\n+++ b/{APP}\n@@ -1,2 +1,1 @@\n+a\n+b\n",  # more added than counted
     ],
-    ids=["ends-in-hunk", "too-long", "cut-short"],
+    ids=["ends-in-hunk", "too-long", "cut-short", "too-many-added"],
 )
 def test_malformed_diff_fails_closed(diff: str) -> None:
     (violation,) = check_diff(diff)
     assert violation.rule == "malformed-diff"
     assert not policy_check(diff).passed
+
+
+def test_odd_escapes_in_quoted_paths_never_crash() -> None:
+    # Git never writes "\9", but --diff takes any text: it must not raise.
+    (f,) = parse_diff('diff --git "a/target/a\\999.py" "b/target/a\\tb.py"\n')
+    assert (f.old_path, f.new_path) == ("target/a999.py", "target/a\tb.py")
+    assert check_diff('diff --git "a/target/a\\999.py" "b/target/a\\999.py"\n') == []
