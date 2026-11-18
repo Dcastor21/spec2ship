@@ -84,7 +84,11 @@ def gates(
 ) -> None:
     """Run the quality gates on a workspace."""
     try:
-        diff_text = diff.read_text(encoding="utf-8") if diff is not None else None
+        # Undecodable bytes become U+FFFD: the policy's patterns are ASCII, and a
+        # diff must never crash the gates.
+        diff_text = (
+            diff.read_bytes().decode("utf-8", errors="replace") if diff is not None else None
+        )
         result = run_gates(workspace, mode="local" if local else "docker", diff=diff_text)
     except OSError as exc:
         typer.echo(f"spec2ship gates: could not read --diff: {exc}", err=True)

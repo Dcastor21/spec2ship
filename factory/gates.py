@@ -25,7 +25,7 @@ from pydantic import BaseModel, ConfigDict
 
 from factory.policy import check_diff
 from factory.sandbox import REPO_ROOT, Limits, Mode, SandboxResult, build_image, run
-from factory.spec import GATE_CONFIG_NAMES
+from factory.spec import is_gate_config
 
 TARGET_DIR = "target"
 TARGET_PACKAGE = "target/guard_ops"
@@ -70,22 +70,17 @@ class GateResult(BaseModel):
 # --- config integrity -------------------------------------------------------
 
 
-def _is_gate_config(name: str) -> bool:
-    clean = name.lower().rstrip(". ")
-    return clean in GATE_CONFIG_NAMES or clean.endswith(".pth")
-
-
 def config_problems(workspace: Path, reference: Path = REPO_ROOT) -> list[str]:
     """Every way the workspace's gate configuration differs from the factory's."""
     in_workspace = {
         path.relative_to(workspace)
         for path in workspace.rglob("*")
-        if path.is_file() and _is_gate_config(path.name)
+        if path.is_file() and is_gate_config(path.name)
     }
     in_reference = {
         path.relative_to(reference)
         for path in (reference / TARGET_DIR).rglob("*")
-        if path.is_file() and _is_gate_config(path.name)
+        if path.is_file() and is_gate_config(path.name)
     }
     expected = in_reference | {Path("pyproject.toml"), Path(LOCK_FILE)}
 

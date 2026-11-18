@@ -91,6 +91,7 @@ QUIET = [
     ("word-subprocesses", added(APP, "# subprocesses are not used here")),
     ("short-sk", added(APP, 'prefix = "sk-"')),
     ("password-field", added(APP, "password: str = Field(min_length=8)")),
+    ("tokenizer-word", added(APP, 'detokenizer = "whitespace-split"')),
     ("parametrize", added(TESTS, '@pytest.mark.parametrize("x", [1, 2])')),
     ("usefixtures", added(TESTS, '@pytest.mark.usefixtures("client")')),
     ("plain-test", added(TESTS, "def test_new_behaviour(client):", "    assert True")),
@@ -235,3 +236,133 @@ def test_run_gates_adds_the_policy_check_only_when_given_a_diff(
 def test_violation_without_line_renders_path_only() -> None:
     violation = Violation(rule="deleted-test", path=TESTS, line=None, detail="removed test_x")
     assert violation.render() == f"{TESTS} [deleted-test] removed test_x"
+
+
+# --- evasions found in review ---------------------------------------------------
+
+EVASIONS = [
+    # gate-weakening comments in the forms the tools themselves honor
+    ("ruff-file-noqa", added(APP, "# ruff: noqa"), "gate-comment"),
+    ("flake8-file-noqa", added(APP, "# flake8: noqa"), "gate-comment"),
+    ("bare-noqa", added(APP, "import os  #noqa"), "gate-comment"),
+    ("upper-noqa", added(APP, "import os  # NOQA"), "gate-comment"),
+    ("mypy-ignore-errors", added(APP, "# mypy: ignore-errors"), "gate-comment"),
+    ("mypy-disable-code", added(APP, "# mypy: disable-error-code=arg-type"), "gate-comment"),
+    ("pragma-no-colon", added(APP, "    return 1  # pragma no cover"), "gate-comment"),
+    # tests dropped from collection
+    ("dunder-test", added(TESTS, "__test__ = False"), "skipped-test"),
+    ("from-pytest-import-skip", added(TESTS, "from pytest import skip"), "skipped-test"),
+    ("unittest-skip", added(TESTS, '@unittest.skip("later")'), "skipped-test"),
+    (
+        "class-renamed",
+        removed(TESTS, "class TestTours:") + added(TESTS, "class Tours:"),
+        "deleted-test",
+    ),
+    (
+        "moved-to-non-test-module",
+        removed(TESTS, "def test_x(client):")
+        + added("target/guard_ops/x.py", "def test_x(client):"),
+        "deleted-test",
+    ),
+    (
+        "test-module-renamed",
+        f"diff --git a/{TESTS} b/target/tests/tours_cases.py\nsimilarity index 100%\n"
+        f"rename from {TESTS}\nrename to target/tests/tours_cases.py\n",
+        "deleted-test",
+    ),
+    # stubs make mypy skip the matching .py
+    (
+        "pyi-stub",
+        added("target/guard_ops/db.pyi", "def utc_text(value: object) -> str: ..."),
+        "gate-config",
+    ),
+    # banned calls in their other spellings
+    ("from-os-import-system", added(APP, "from os import system"), "banned-call"),
+    ("os-execv", added(APP, 'os.execv("/bin/sh", ["sh"])'), "banned-call"),
+    ("os-spawn", added(APP, "os.spawnl(os.P_WAIT, prog)"), "banned-call"),
+    ("os-posix-spawn", added(APP, "os.posix_spawn(prog, args, env)"), "banned-call"),
+    ("pty", added(APP, 'pty.spawn("/bin/sh")'), "banned-call"),
+    (
+        "asyncio-subprocess",
+        added(APP, "p = await asyncio.create_subprocess_exec(cmd)"),
+        "banned-call",
+    ),
+    ("dunder-import", added(APP, 'm = __import__("subprocess")'), "banned-call"),
+    ("importlib", added(APP, "m = importlib.import_module(name)"), "banned-call"),
+    ("builtins-eval", added(APP, "builtins.eval(code)"), "banned-call"),
+    # secrets in other shapes
+    ("dict-key", added(APP, 'CONFIG = {"api_key": "abcd1234efgh5678"}'), "secret"),
+    ("dotenv", added(".env.example", "DB_PASSWORD=hunter2hunter2"), "secret"),
+    ("bearer", added(APP, 'h = {"Authorization": "Bearer abcdefghijklmnopqrstuvwxyz"}'), "secret"),
+    # hooks without a def pytest_ line
+    ("pytest-plugins", added(TESTS, 'pytest_plugins = ["plug"]'), "pytest-hook"),
+    ("hook-assignment", added(TESTS, "pytest_collection_modifyitems = drop"), "pytest-hook"),
+    ("hook-import", added(TESTS, "from plug import pytest_collection_modifyitems"), "pytest-hook"),
+]
+
+
+@pytest.mark.parametrize(
+    ("diff", "rule"), [case[1:] for case in EVASIONS], ids=[case[0] for case in EVASIONS]
+)
+def test_evasions_found_in_review_are_flagged(diff: str, rule: str) -> None:
+    assert rule in rules(diff)
+
+
+MORE_QUIET = [
+    ("header-lookup", added(APP, 'token = request.headers["x-token"]')),
+    ("os-path", added(APP, "path = os.path.join(root, name)")),
+    (
+        "test-moved-between-test-modules",
+        removed(TESTS, "class TestTours:")
+        + added("target/tests/test_tours_v2.py", "class TestTours:"),
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "diff", [case[1] for case in MORE_QUIET], ids=[case[0] for case in MORE_QUIET]
+)
+def test_more_near_misses_are_not_flagged(diff: str) -> None:
+    assert check_diff(diff) == []
+
+
+def test_secrets_are_scrubbed_from_every_rules_output() -> None:
+    # The usual way to quiet ruff's S105 also used to leak the key via the noqa finding.
+    fake_key = "sk-ant-" + "abcdefghijklmnopqrstuvwxyz0123"
+    check = policy_check(added(APP, f'API_KEY = "{fake_key}"  # noqa: S105'))
+    assert {"secret", "gate-comment"} <= {
+        line.split("[")[1].split("]")[0] for line in check.details.splitlines()
+    }
+    assert fake_key not in check.details
+    assert fake_key not in check.summary
+
+
+def test_git_quoted_paths_are_decoded() -> None:
+    # Git writes a non-ASCII path quoted, with its UTF-8 bytes as octal escapes.
+    quoted = r'"b/target/guard_ops/caf\303\251.py"'
+    assert "\\303" in quoted  # the parser really sees git's backslashes
+    diff = (
+        f"diff --git {quoted.replace('b/', 'a/', 1)} {quoted}\n"
+        f"new file mode 100644\n--- /dev/null\n+++ {quoted}\n"
+        "@@ -0,0 +1 @@\n+import subprocess\n"
+    )
+    decoded = "target/guard_ops/caf" + chr(0xE9) + ".py"
+    (f,) = parse_diff(diff)
+    assert f.path == decoded
+    (violation,) = check_diff(diff)
+    assert (violation.rule, violation.path) == ("banned-call", decoded)
+
+
+@pytest.mark.parametrize(
+    "diff",
+    [
+        f"--- a/{APP}\n+++ b/{APP}\n@@ -1,5 +1,5 @@\n x = 1\n",  # ends inside a hunk
+        f"--- a/{APP}\n+++ b/{APP}\n@@ -1 +1 @@\n x = 1\n y = 2\n",  # longer than its counts
+        f"--- a/{APP}\n+++ b/{APP}\n@@ -1,2 +1,2 @@\n x = 1\ndiff --git a/b b/b\n",  # cut short
+    ],
+    ids=["ends-in-hunk", "too-long", "cut-short"],
+)
+def test_malformed_diff_fails_closed(diff: str) -> None:
+    (violation,) = check_diff(diff)
+    assert violation.rule == "malformed-diff"
+    assert not policy_check(diff).passed

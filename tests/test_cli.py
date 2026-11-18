@@ -165,3 +165,20 @@ def test_gates_with_a_missing_diff_file_exits_3(tmp_path: Path) -> None:
     result = runner.invoke(app, ["gates", str(tmp_path), "--diff", str(tmp_path / "nope.diff")])
     assert result.exit_code == GATES_ERROR_EXIT_CODE
     assert "could not read --diff" in result.stderr
+
+
+def test_gates_accepts_a_diff_that_is_not_utf8(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    seen: dict[str, object] = {}
+
+    def fake(workspace: Path, *, mode: str, diff: str | None) -> GateResult:
+        seen["diff"] = diff
+        return gate_result()
+
+    monkeypatch.setattr(cli, "run_gates", fake)
+    patch = tmp_path / "latin1.diff"
+    patch.write_bytes(b"+++ b/caf\xe9.py\n")
+    result = runner.invoke(app, ["gates", str(tmp_path), "--diff", str(patch)])
+    assert result.exit_code == 0, result.output
+    assert seen["diff"] == "+++ b/caf\ufffd.py\n"

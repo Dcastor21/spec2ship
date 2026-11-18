@@ -52,7 +52,18 @@ GATE_CONFIG_NAMES = frozenset(
         "usercustomize.py",
     }
 )
+# .pth files run code at interpreter start; a .pyi stub makes mypy ignore its .py.
+GATE_CONFIG_SUFFIXES = (".pth", ".pyi")
 ID_PATTERN = r"^[A-Z]{2,5}-\d{3}$"
+
+
+def is_gate_config(name: str) -> bool:
+    """True if a file with this name configures the gates. The one place this is decided:
+    the spec gate, the quality gates and the diff policy all ask here."""
+    clean = PurePosixPath(name).name.lower().rstrip(". ")
+    return clean in GATE_CONFIG_NAMES or clean.endswith(GATE_CONFIG_SUFFIXES)
+
+
 _DRIVE_LETTER = re.compile(r"^[A-Za-z]:")
 _CONTROL_OR_BRACE = re.compile(r"[\x00-\x1f\x7f{}]")
 
@@ -116,8 +127,7 @@ def _check_allowed_path(path: str) -> str:
     # nearly as broad. Breadth is for the human reviewing the spec to judge.
     if not path[len(TARGET_ROOT) :].strip("*/"):
         raise reject("path_catch_all", "allows all of target/")
-    name = PurePosixPath(path).name.lower().rstrip(". ")
-    if name in GATE_CONFIG_NAMES or name.endswith(".pth"):
+    if is_gate_config(path):
         raise reject("path_gate_config", "names a file that configures the gates")
     return path
 
@@ -220,7 +230,7 @@ HINTS: dict[str, str] = {
     "path_catch_all": "name the files or folders the change needs, e.g. target/guard_ops/routes/*",
     "path_gate_config": (
         "remove it; test, lint, type and interpreter configuration (conftest.py, "
-        "pytest.ini, ruff.toml, .pth, ...) can change how the gates judge every file, "
+        "pytest.ini, ruff.toml, .pth, .pyi stubs, ...) can change how the gates judge every file, "
         "so only a human edits it"
     ),
 }
