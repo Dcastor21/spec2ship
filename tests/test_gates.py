@@ -17,6 +17,7 @@ from factory.gates import (
     GateError,
     _check,
     check_commands,
+    config_problems,
     run_gates,
     summarize,
 )
@@ -176,11 +177,20 @@ def test_changed_gate_config_stops_the_gates_before_any_check(
     assert problem in str(caught.value)
 
 
-def test_a_deselected_target_test_fails_the_pytest_check() -> None:
-    hidden = result(exit_code=0, stdout="19 passed, 1 deselected in 1.2s\n")
+@pytest.mark.parametrize("outcome", ["1 deselected", "1 skipped", "1 xfailed", "1 xpassed"])
+def test_a_target_test_that_did_not_count_fails_the_pytest_check(outcome: str) -> None:
+    hidden = result(exit_code=0, stdout=f"19 passed, {outcome} in 1.2s\n")
     check = _check("pytest", hidden)
     assert not check.passed
-    assert "deselected tests are not allowed" in check.summary
+    assert "skipped, xfail or deselected tests are not allowed" in check.summary
+
+
+def test_missing_reference_copy_is_a_problem_not_a_crash(workspace: Path, tmp_path: Path) -> None:
+    reference = tmp_path / "reference"
+    shutil.copytree(workspace / "target", reference / "target")
+    shutil.copyfile(workspace / "pyproject.toml", reference / "pyproject.toml")
+    problems = config_problems(workspace, reference)
+    assert problems == ["uv.lock: the factory's reference copy is missing"]
 
 
 def result(**overrides: object) -> SandboxResult:

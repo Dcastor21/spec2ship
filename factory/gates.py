@@ -34,7 +34,8 @@ DOCKER_MYPY_CACHE = "/tmp/mypy_cache"  # noqa: S108 - the container's private tm
 LOCK_FILE = "uv.lock"
 
 _ERROR_COUNT = re.compile(r"^Found \d+ errors?\b")
-_DESELECTED = re.compile(r"\b\d+ deselected\b")
+# Outcomes the target suite never has. Each one is a test that did not count.
+_NOT_RUN = re.compile(r"\b\d+ (deselected|skipped|xfailed|xpassed)\b")
 _FAILURES = re.compile(r"\b\d+ (failed|errors?)\b")
 
 
@@ -92,7 +93,9 @@ def config_problems(workspace: Path, reference: Path = REPO_ROOT) -> list[str]:
         problems.append(f"{rel.as_posix()} is gate configuration the factory does not have")
     for rel in sorted(expected):
         mine, theirs = workspace / rel, reference / rel
-        if not mine.is_file():
+        if not theirs.is_file():
+            problems.append(f"{rel.as_posix()}: the factory's reference copy is missing")
+        elif not mine.is_file():
             problems.append(f"{rel.as_posix()} is missing")
         elif mine.read_bytes() != theirs.read_bytes():
             problems.append(f"{rel.as_posix()} differs from the factory's copy")
@@ -153,9 +156,10 @@ def summarize(result: SandboxResult) -> str:
 def _check(name: str, result: SandboxResult) -> CheckResult:
     summary = summarize(result)
     passed = result.ok
-    if name == "pytest" and _DESELECTED.search(summary):
-        # The target suite never deselects anything; a deselected test is a hidden one.
-        passed, summary = False, f"{summary} (deselected tests are not allowed)"
+    if name == "pytest" and _NOT_RUN.search(summary):
+        # Counting outcomes also catches a pytest.skip() built at runtime, which a diff
+        # scan (T1.6) cannot see.
+        passed, summary = False, f"{summary} (skipped, xfail or deselected tests are not allowed)"
     details = "\n".join(part for part in (result.stdout, result.stderr) if part.strip())
     return CheckResult(name=name, passed=passed, summary=summary, details=details)
 
