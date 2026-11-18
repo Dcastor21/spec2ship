@@ -1,7 +1,7 @@
 """spec2ship command-line interface.
 
-Every command is a stub until its docs/PLAN.md task lands. A stub exits
-non-zero and names that task, so nothing reports success before it works.
+Commands not built yet are stubs: they exit non-zero and name their
+docs/PLAN.md task, so nothing reports success before it works.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from typing import Annotated, NoReturn
 import typer
 
 from factory import __version__
+from factory.spec import lint_path
 
 # The app's help text comes from the `main` callback docstring below.
 app = typer.Typer(name="spec2ship", no_args_is_help=True, add_completion=False)
@@ -54,7 +55,15 @@ def lint(
     path: Annotated[Path, typer.Argument(help="A spec file or a directory of specs.")],
 ) -> None:
     """Check specs against the spec gate."""
-    _not_implemented("lint", "T1.3")
+    report = lint_path(path)
+    for problem in report.problems:
+        typer.echo(problem.render())
+    if report.problems:
+        count = len(report.problems)
+        typer.echo(f"{count} problem{'s' if count != 1 else ''} found. Fix them and re-run.")
+        raise typer.Exit(code=1)
+    count = len(report.specs)
+    typer.echo(f"ok: {count} spec{'s' if count != 1 else ''} passed the spec gate")
 
 
 @app.command()

@@ -7,6 +7,8 @@ license-files = ["LICENSE"]
 authors = [{ name = "Darnel Castor" }]
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "pydantic>=2.14.3",
+    "pyyaml>=6.0.3",
     "typer>=0.29.1",
 ]
 
@@ -95,6 +97,7 @@ dev = [
     "pytest>=9.2.0",
     "pytest-cov>=7.1.0",
     "ruff>=0.17.5",
+    "types-pyyaml>=6.0.12.20261113",
 ]
 target = [
     "fastapi>=0.163.2",

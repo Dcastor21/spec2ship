@@ -10,7 +10,7 @@ Work top to bottom, one task at a time (`/next`). Tick a task only when its **Do
 - [x] **T1.2 ★ Target service.** `target/guard_ops`: FastAPI + SQLite with guards, sites/posts, shifts, tours with checkpoints and scan events, and incidents. About 15 tests in `target/tests`.
   Done when: target tests pass and `uv run uvicorn target.guard_ops.main:app` serves `/docs`.
 
-- [ ] **T1.3 ★ Spec schema and spec gate.** `factory/spec.py`: Pydantic `Spec` (id, title, goal, acceptance_criteria ≥ 1, allowed_paths ≥ 1 glob, risk low/high, budget with max_attempts ≤ 5 and max_usd). `spec2ship lint <file|dir>` prints every problem with a fix hint.
+- [x] **T1.3 ★ Spec schema and spec gate.** `factory/spec.py`: Pydantic `Spec` (id, title, goal, acceptance_criteria ≥ 1, allowed_paths ≥ 1 glob, risk low/high, budget with max_attempts ≤ 5 and max_usd). `spec2ship lint <file|dir>` prints every problem with a fix hint.
   Done when: tests cover a valid spec and each rejection reason.
 
 - [ ] **T1.4 Sandbox runner.** `factory/sandbox.py`: run a command in Docker (`python:3.12-slim` with deps), workspace mounted, `--network none`, CPU and memory limits, timeout, non-root user. Returns exit code, stdout, stderr, duration. The image installs the target's deps from `uv.lock` (`uv sync --group target`, plus dev tools for the gates) at build time, since runs have no network. A `local` mode (plain subprocess with timeout) for machines without Docker; on timeout it kills the whole process tree, not just the direct child (on Windows, stopping `uv run` leaves its child running).
