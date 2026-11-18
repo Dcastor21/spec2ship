@@ -17,7 +17,8 @@ from pathlib import Path
 
 
 def run(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=45)
+    # Argument list, no shell; callers put "--" before any path from the payload.
+    return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=45)  # noqa: S603
 
 
 def main() -> int:
@@ -30,8 +31,7 @@ def main() -> int:
     if not file_path or not file_path.endswith(".py"):
         return 0
 
-    project_dir = Path(os.environ.get(
-        "CLAUDE_PROJECT_DIR", payload.get("cwd", ".")))
+    project_dir = Path(os.environ.get("CLAUDE_PROJECT_DIR", payload.get("cwd", ".")))
     if not (project_dir / "pyproject.toml").exists() or not Path(file_path).exists():
         return 0
     if shutil.which("uv") is None:
@@ -40,11 +40,9 @@ def main() -> int:
         return 0  # ruff not installed yet
 
     run(["uv", "run", "ruff", "format", "--", file_path], project_dir)
-    check = run(["uv", "run", "ruff", "check",
-                "--fix", "--", file_path], project_dir)
+    check = run(["uv", "run", "ruff", "check", "--fix", "--", file_path], project_dir)
     if check.returncode != 0:
-        print(
-            f"ruff found problems in {file_path}:\n{check.stdout}{check.stderr}", file=sys.stderr)
+        print(f"ruff found problems in {file_path}:\n{check.stdout}{check.stderr}", file=sys.stderr)
         return 2
     return 0
 

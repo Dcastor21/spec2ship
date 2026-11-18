@@ -1,0 +1,29 @@
+# secrets: keys come from env only
+.env
+.env.*
+!.env.example
+
+# per-run artifacts (workspaces, traces, evidence)
+runs/
+
+# local SQLite databases (guard_ops.db from running the target)
+*.db
+
+# virtualenvs (.venv on Windows, .venv-linux in WSL)
+.venv*/
+
+# python and tool caches
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# build output
+build/
+dist/
+*.egg-info/
