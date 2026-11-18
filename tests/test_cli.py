@@ -10,8 +10,9 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
-from factory import __version__
-from factory.cli import NOT_IMPLEMENTED_EXIT_CODE, app
+from factory import __version__, cli
+from factory.cli import GATES_ERROR_EXIT_CODE, NOT_IMPLEMENTED_EXIT_CODE, app
+from factory.gates import CheckResult, GateResult
 
 runner = CliRunner()
 
@@ -74,7 +75,6 @@ def test_lint_prints_every_problem_with_a_fix_and_fails(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("args", "task_id"),
     [
-        (["gates", "runs/demo/workspace"], "T1.5"),
         (["run", "specs/GO-001.yaml"], "T2.9"),
         (["eval"], "T3.4"),
     ],
@@ -84,3 +84,60 @@ def test_unbuilt_commands_fail_and_name_their_task(args: list[str], task_id: str
     assert result.exit_code == NOT_IMPLEMENTED_EXIT_CODE
     assert "not implemented yet" in result.stderr
     assert task_id in result.stderr
+
+
+def gate_result(*failing: str) -> GateResult:
+    names = ["ruff check", "ruff format", "mypy", "pytest"]
+    return GateResult(
+        checks=[
+            CheckResult(
+                name=name,
+                passed=name not in failing,
+                summary="Found 1 error." if name in failing else "ok",
+                details=f"{name} details",
+            )
+            for name in names
+        ]
+    )
+
+
+def test_gates_reports_each_check_and_fails_with_details(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    seen: dict[str, object] = {}
+
+    def fake(workspace: Path, *, mode: str) -> GateResult:
+        seen["mode"] = mode
+        return gate_result("mypy")
+
+    monkeypatch.setattr(cli, "run_gates", fake)
+    result = runner.invoke(app, ["gates", str(tmp_path)])
+    assert result.exit_code == 1
+    assert seen["mode"] == "docker"
+    assert "FAIL  mypy         Found 1 error." in result.output
+    assert "PASS  pytest" in result.output
+    assert "--- mypy ---\nmypy details" in result.output
+    assert "ruff check details" not in result.output
+    assert "1 of 4 checks failed." in result.output
+
+
+def test_gates_passes_and_local_flag_selects_local_mode(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    seen: dict[str, object] = {}
+
+    def fake(workspace: Path, *, mode: str) -> GateResult:
+        seen["mode"] = mode
+        return gate_result()
+
+    monkeypatch.setattr(cli, "run_gates", fake)
+    result = runner.invoke(app, ["gates", str(tmp_path), "--local"])
+    assert result.exit_code == 0, result.output
+    assert seen["mode"] == "local"
+    assert "ok: all 4 checks passed" in result.output
+
+
+def test_gates_on_a_bad_workspace_exits_3_with_the_reason(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["gates", str(tmp_path), "--local"])
+    assert result.exit_code == GATES_ERROR_EXIT_CODE == 3
+    assert "has no target" in result.stderr

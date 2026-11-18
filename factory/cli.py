@@ -12,6 +12,8 @@ from typing import Annotated, NoReturn
 import typer
 
 from factory import __version__
+from factory.gates import GateError, run_gates
+from factory.sandbox import SandboxError
 from factory.spec import lint_path
 
 # The app's help text comes from the `main` callback docstring below.
@@ -19,6 +21,8 @@ app = typer.Typer(name="spec2ship", no_args_is_help=True, add_completion=False)
 
 # Click already uses exit code 2 for usage errors, so "not built yet" gets 1.
 NOT_IMPLEMENTED_EXIT_CODE = 1
+# 1 means checks failed; 2 is Click's usage error; 3 means the gates could not run.
+GATES_ERROR_EXIT_CODE = 3
 
 
 def _not_implemented(command: str, task_id: str) -> NoReturn:
@@ -69,9 +73,26 @@ def lint(
 @app.command()
 def gates(
     workspace: Annotated[Path, typer.Argument(help="Workspace directory to check.")],
+    local: Annotated[
+        bool,
+        typer.Option("--local", help="Run without Docker. NOT isolated: trusted code only."),
+    ] = False,
 ) -> None:
     """Run the quality gates on a workspace."""
-    _not_implemented("gates", "T1.5")
+    try:
+        result = run_gates(workspace, mode="local" if local else "docker")
+    except (GateError, SandboxError) as exc:
+        typer.echo(f"spec2ship gates: {exc}", err=True)
+        raise typer.Exit(code=GATES_ERROR_EXIT_CODE) from exc
+    for check in result.checks:
+        typer.echo(f"{'PASS' if check.passed else 'FAIL'}  {check.name:<12} {check.summary}")
+    for check in result.checks:
+        if not check.passed:
+            typer.echo(f"\n--- {check.name} ---\n{check.details}")
+    if not result.passed:
+        typer.echo(f"\n{len(result.failed)} of {len(result.checks)} checks failed.")
+        raise typer.Exit(code=1)
+    typer.echo(f"\nok: all {len(result.checks)} checks passed")
 
 
 @app.command()
