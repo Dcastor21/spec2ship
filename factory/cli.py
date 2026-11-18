@@ -77,10 +77,18 @@ def gates(
         bool,
         typer.Option("--local", help="Run without Docker. NOT isolated: trusted code only."),
     ] = False,
+    diff: Annotated[
+        Path | None,
+        typer.Option("--diff", help="A unified diff of the change, checked by the diff policy."),
+    ] = None,
 ) -> None:
     """Run the quality gates on a workspace."""
     try:
-        result = run_gates(workspace, mode="local" if local else "docker")
+        diff_text = diff.read_text(encoding="utf-8") if diff is not None else None
+        result = run_gates(workspace, mode="local" if local else "docker", diff=diff_text)
+    except OSError as exc:
+        typer.echo(f"spec2ship gates: could not read --diff: {exc}", err=True)
+        raise typer.Exit(code=GATES_ERROR_EXIT_CODE) from exc
     except (GateError, SandboxError) as exc:
         typer.echo(f"spec2ship gates: {exc}", err=True)
         raise typer.Exit(code=GATES_ERROR_EXIT_CODE) from exc

@@ -106,8 +106,8 @@ def test_gates_reports_each_check_and_fails_with_details(
 ) -> None:
     seen: dict[str, object] = {}
 
-    def fake(workspace: Path, *, mode: str) -> GateResult:
-        seen["mode"] = mode
+    def fake(workspace: Path, *, mode: str, diff: str | None) -> GateResult:
+        seen["mode"], seen["diff"] = mode, diff
         return gate_result("mypy")
 
     monkeypatch.setattr(cli, "run_gates", fake)
@@ -126,8 +126,8 @@ def test_gates_passes_and_local_flag_selects_local_mode(
 ) -> None:
     seen: dict[str, object] = {}
 
-    def fake(workspace: Path, *, mode: str) -> GateResult:
-        seen["mode"] = mode
+    def fake(workspace: Path, *, mode: str, diff: str | None) -> GateResult:
+        seen["mode"], seen["diff"] = mode, diff
         return gate_result()
 
     monkeypatch.setattr(cli, "run_gates", fake)
@@ -141,3 +141,27 @@ def test_gates_on_a_bad_workspace_exits_3_with_the_reason(tmp_path: Path) -> Non
     result = runner.invoke(app, ["gates", str(tmp_path), "--local"])
     assert result.exit_code == GATES_ERROR_EXIT_CODE == 3
     assert "has no target" in result.stderr
+
+
+def test_gates_reads_the_diff_file_and_passes_it_on(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    seen: dict[str, object] = {}
+
+    def fake(workspace: Path, *, mode: str, diff: str | None) -> GateResult:
+        seen["diff"] = diff
+        return gate_result()
+
+    monkeypatch.setattr(cli, "run_gates", fake)
+    patch = tmp_path / "change.diff"
+    text = "--- a/x.py\n+++ b/x.py\n"
+    patch.write_bytes(text.encode("utf-8"))
+    result = runner.invoke(app, ["gates", str(tmp_path), "--diff", str(patch)])
+    assert result.exit_code == 0, result.output
+    assert seen["diff"] == text
+
+
+def test_gates_with_a_missing_diff_file_exits_3(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["gates", str(tmp_path), "--diff", str(tmp_path / "nope.diff")])
+    assert result.exit_code == GATES_ERROR_EXIT_CODE
+    assert "could not read --diff" in result.stderr

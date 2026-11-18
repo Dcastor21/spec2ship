@@ -23,6 +23,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
+from factory.policy import check_diff
 from factory.sandbox import REPO_ROOT, Limits, Mode, SandboxResult, build_image, run
 from factory.spec import GATE_CONFIG_NAMES
 
@@ -164,6 +165,21 @@ def _check(name: str, result: SandboxResult) -> CheckResult:
     return CheckResult(name=name, passed=passed, summary=summary, details=details)
 
 
+def policy_check(diff: str) -> CheckResult:
+    """The diff policy as one more check. Pure text: it never runs agent code."""
+    violations = check_diff(diff)
+    if not violations:
+        return CheckResult(name="policy", passed=True, summary="no policy violations", details="")
+    count = len(violations)
+    rules = ", ".join(sorted({violation.rule for violation in violations}))
+    return CheckResult(
+        name="policy",
+        passed=False,
+        summary=f"{count} policy violation{'s' if count != 1 else ''}: {rules}",
+        details="\n".join(violation.render() for violation in violations),
+    )
+
+
 def run_gates(
     workspace: Path,
     *,
@@ -171,6 +187,7 @@ def run_gates(
     limits: Limits | None = None,
     image: str | None = None,
     reference: Path = REPO_ROOT,
+    diff: str | None = None,
 ) -> GateResult:
     """Run every check against `workspace`: a copy of target/ with the repo's pyproject.toml
     and uv.lock beside it, byte for byte."""
@@ -195,4 +212,6 @@ def run_gates(
             _check(name, run(cmd, workspace, mode=mode, limits=limits, image=image))
             for name, cmd in check_commands(python, cache)
         ]
+    if diff is not None:  # the agent's change, from the workspace's git (T2.3)
+        checks.append(policy_check(diff))
     return GateResult(checks=checks)
