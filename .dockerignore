@@ -1,0 +1,5 @@
+# The sandbox image needs only the dependency manifest. Send nothing else
+# (no .env, no .venv, no runs/, no acceptance/) to the Docker daemon.
+*
+!pyproject.toml
+!uv.lock
